@@ -88,7 +88,7 @@ public:
     {
         printf("------------------SHOW-----------------------\n");
 
-        printf("전체 힙 메모리 : %d bytes\n", _size);
+        printf("전체 힙 메모리 : %zu bytes\n", _size);
 
         for (size_t index = 0; index < _memory_start_point_list.size(); ++index)
         {
