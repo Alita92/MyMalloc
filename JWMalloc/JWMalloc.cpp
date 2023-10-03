@@ -5,8 +5,14 @@
 #include <conio.h>
 #include <stdio.h>
 #include <stdlib.h>
-
+#include <random>
 using namespace std;
+
+
+int Random(int min, int max)
+{
+    return static_cast<int>(rand() % (max + 1UL - min)) + min;
+}
 
 struct Node
 {
@@ -54,7 +60,7 @@ public:
     }
 
     // 메모리 할당 함수
-    void* SetMalloc(size_t bytes)
+    void* Malloc(size_t bytes)
     {
         if (_used_memory + bytes <= _size)
         {
@@ -90,8 +96,11 @@ public:
                             // 해당 반복자와의 사이즈가 같고 반복자 위치의 메모리가 사용 중이 아니라면
                             // 이 포인터를 사용 중으로 바꾸고 리턴해준다
                             iter->_is_using = true;
+
+                            _used_memory += bytes;
                             printf("할당 완료... index : %d , address : %p, size : %zu \n", index, iter->_start_address, bytes);
                             return iter->_start_address;
+
                         }
                         else if (iter_size > new_node_size) // 해당 반복자 노드의 크기가 새로운 노드보다 크다면
                         {
@@ -109,6 +118,8 @@ public:
                             _memory_start_list.insert(next(iter, 1), node_left_over);
 
                             iter->_is_using = true;
+
+                            _used_memory += bytes;
                             printf("할당 완료... index : %d , address : %p, size : %zu \n", index, iter->_start_address, bytes);
                             return iter->_start_address;
                         }
@@ -130,7 +141,7 @@ public:
 
                     _used_memory += bytes;
 
-                    printf("할당 완료... index : %d , address : %p, size : %zu \n", _memory_start_list.size() - 1, node._start_address, bytes);
+                    printf("할당 완료... index : %zu , address : %p, size : %zu \n", _memory_start_list.size() - 1, node._start_address, bytes);
                     return _memory_start_list.back()._start_address;
                 }
                 else
@@ -152,7 +163,7 @@ public:
     // 메모리 해제 함수
 
     // 인덱스로 해제
-    void SetFree(int index)
+    void Free(int index)
     {
         list<Node>::iterator iter = _memory_start_list.begin();
         
@@ -181,6 +192,7 @@ public:
                 }
 
                 iter->_is_using = false;
+                _used_memory -= iter->_size;
 
                 // 이전과 다음 노드가 비활성화 상태라면 해당 노드를 erase 해 주고 사이즈와 주소를 통합시킨다
                 if (index != 0)
@@ -202,7 +214,7 @@ public:
                     }
                 }
                
-                if (index < _memory_start_list.size())
+                if (index < static_cast<int>(_memory_start_list.size()) - 1)
                 {
                     auto next_iter = next(iter, 1);
 
@@ -225,8 +237,6 @@ public:
                     _memory_start_list.erase(iter);
                 }
              
-                _used_memory -= iter->_size;
-
                 Show();
                 printf("메모리 free 완료.\n");
                 return;
@@ -243,7 +253,7 @@ public:
     {
         printf("------------------SHOW-----------------------\n");
 
-        printf("전체 힙 메모리 : %zu bytes\n", _size);
+        printf("전체 힙 메모리 : %zu bytes / 사용 중인 메모리 : %zu bytes \n", _size, _used_memory);
 
         int index = 0;
 
@@ -269,48 +279,55 @@ public:
     
     void SetMemoryMenu()
     {
-        printf("메모리의 자료형을 선택해주세요. \n1번 : char\n2번 : int\n그 외 : 돌아가기\n");
+        printf("할당하려는 크기를 입력해주세요.\n");
+        size_t bytes = 0;
+        cin >> bytes;
 
-        char key;
-        key = _getch();
+        if (bytes <= 0)
+        {
+            printf("잘못된 값이 입력되었습니다.\n");
+            return;
+        }
 
-        int int_key = key - '0';
-
-        switch (int_key)
-        {
-        case 1:
-        {
-            (char*)(SetMalloc(sizeof(char)));
-        }
-        break;
-        case 2:
-        {
-            (int*)(SetMalloc(sizeof(int)));
-        }
-        break;
-        default:
-            printf("메모리 할당을 취소합니다. \n");
-            break;
-        }
+        Malloc(bytes);
     }
 
     void FreeMemoryMenu()
     {
         Show();
-        printf("해제할 메모리의 인덱스를 입력해주세요! \nQ : 취소\n");
+        printf("해제할 메모리의 인덱스를 입력해주세요! \n");
 
-        char key;
-        key = _getch();
+        size_t index = 0;
+        cin >> index;
 
-        if (key == 'q' || key == 'Q')
+        if (index < 0)
         {
-            printf("메모리 해제 취소, 메인 메뉴로 돌아갑니다.\n");
+            printf("잘못된 인덱스입니다. 메인 메뉴로 돌아갑니다.\n");
             return;
         }
 
-        int memory_index = key - '0';
-        SetFree(memory_index);
+        Free(static_cast<int>(index));
         return;
+    }
+
+    void RandomMalloc()
+    {
+        while (_used_memory <= _size)
+        {
+            int random_size = Random(1, 8);
+
+            if (_used_memory + random_size > _size)
+            {
+                break;
+            }
+
+            auto result = Malloc(random_size);
+
+            if (result == nullptr)
+            {
+                break;
+            }
+        }
     }
 
 private:
@@ -324,11 +341,6 @@ private:
     list<Node> _memory_start_list;
 };
 
-// 사용자 정의 노드를 사용한 list 를 만들면...
-// 노드 안에 가져야 할 거?
-// 헤드 주소값... char*
-// 할당된 크기... size_t...
-// 더 없나?
 
 
 int main()
@@ -347,6 +359,8 @@ int main()
         if (size <= 0)
         {
             printf("최대 힙 메모리는 0 이하가 될 수 없습니다.\n 최대 힙 메모리의 바이트 크기를 정해주세요.\n");
+            cin.clear();
+            return 0;
         }
         else
         {
@@ -362,7 +376,7 @@ int main()
     
     while (is_run)
     {
-        printf("Q : 종료 / Z : 메모리 할당 / X : 메모리 해제 / C : 현재 힙 상태\n");
+        printf("Q : 종료 / Z : 메모리 할당 / X : 메모리 해제 / C : 현재 힙 상태 / V : 메모리 자동 할당(디버깅)\n");
         char key;
         key = _getch();
 
@@ -376,18 +390,23 @@ int main()
             break;
         case 'z':
         case 'Z':
-            printf("z키 : 메모리 할당\n");
+            printf("Z키 : 메모리 할당\n");
             memory_manager.SetMemoryMenu();
             break;
         case 'x':
         case 'X':
-            printf("z키 : 메모리 해제\n");
+            printf("X키 : 메모리 해제\n");
             memory_manager.FreeMemoryMenu();
             break;
         case 'c':
         case 'C':
+            printf("C키 : 메모리 상태\n");
             memory_manager.Show();
             break;
+        case 'v':
+        case 'V':
+            printf("V키 : 메모리 랜덤 자동 할당\n");
+            memory_manager.RandomMalloc();
         default:
             break;
         }
