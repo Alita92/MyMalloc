@@ -109,7 +109,7 @@ public:
                         _memory_start_list.insert(iter, new_node);
 
                         _used_memory += bytes;
-                        printf("할당 완료... index : %d , address : %p, size : %zu \n", index, iter->_start_address, bytes);
+                        printf("할당 완료... index : %d , address : %p, size : %zu \n", index, new_node._start_address, bytes);
                         return iter->_start_address;
                     }
                 }
