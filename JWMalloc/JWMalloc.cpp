@@ -8,7 +8,6 @@
 #include <random>
 using namespace std;
 
-
 int Random(int min, int max)
 {
     return static_cast<int>(rand() % (max + 1UL - min)) + min;
@@ -29,6 +28,12 @@ public:
         _memory_block = malloc(size);
         _size = size;
         _used_memory = 0;
+
+        Node node;
+        node._is_using = false;
+        node._size = _size;
+        node._start_address = reinterpret_cast<char*>(_memory_block);
+        _memory_start_list.push_back(node);
     }
 
     ~JWMalloc()
@@ -65,90 +70,52 @@ public:
         if (_used_memory + bytes <= _size)
         {
             // 리스트를 순회하며 자리 찾기
-            if (_memory_start_list.empty())
-            {
-                Node node;
-                node._start_address = reinterpret_cast<char*>(_memory_block);
-                node._size = bytes;
-                node._is_using = true;
-                _memory_start_list.push_back(node);
-                _used_memory += bytes;
-                printf("할당 완료... index : 0 , address : %p, size : %zu \n", node._start_address, bytes);
-                return _memory_block;
-            }
-            else
-            {
-                list<Node>::iterator iter = _memory_start_list.begin();
-                size_t iter_count_size = 0;
-                int index = 0;
+            list<Node>::iterator iter = _memory_start_list.begin();
+            size_t iter_count_size = 0;
+            int index = 0;
 
-                for (; iter != _memory_start_list.end(); ++iter)
+            for (; iter != _memory_start_list.end(); ++iter)
+            {
+                size_t iter_size = iter->_size;
+                size_t new_node_size = bytes;
+
+                iter_count_size += iter_size;
+
+                if (iter->_is_using == false)
                 {
-                    size_t iter_size = iter->_size;
-                    size_t new_node_size = bytes;
-
-                    iter_count_size += iter_size;
-
-                    if (iter->_is_using == false)
+                    if (iter_size == new_node_size)
                     {
-                        if (iter_size == new_node_size)
-                        {
-                            // 해당 반복자와의 사이즈가 같고 반복자 위치의 메모리가 사용 중이 아니라면
-                            // 이 포인터를 사용 중으로 바꾸고 리턴해준다
-                            iter->_is_using = true;
+                        // 해당 반복자와의 사이즈가 같고 반복자 위치의 메모리가 사용 중이 아니라면
+                        // 이 포인터를 사용 중으로 바꾸고 리턴해준다
+                        iter->_is_using = true;
 
-                            _used_memory += bytes;
-                            printf("할당 완료... index : %d , address : %p, size : %zu \n", index, iter->_start_address, bytes);
-                            return iter->_start_address;
+                        _used_memory += bytes;
+                        printf("할당 완료... index : %d , address : %p, size : %zu \n", index, iter->_start_address, bytes);
+                        return iter->_start_address;
 
-                        }
-                        else if (iter_size > new_node_size) // 해당 반복자 노드의 크기가 새로운 노드보다 크다면
-                        {
-                            // 노드 두 개로 세분화한다
-                            iter->_size = bytes;
-
-                            size_t size_left_over = iter_size - new_node_size;
-                            Node node_left_over;
-                            node_left_over._size = size_left_over;
-                            node_left_over._start_address = iter->_start_address + iter->_size;
-                            node_left_over._is_using = false;
-
-                            // 리스트 insert 가 iter 다음이 아닌 이전에 삽입하는지 확인해볼 것...
-                           // _memory_start_list.insert(iter, node_left_over);
-                            _memory_start_list.insert(next(iter, 1), node_left_over);
-
-                            iter->_is_using = true;
-
-                            _used_memory += bytes;
-                            printf("할당 완료... index : %d , address : %p, size : %zu \n", index, iter->_start_address, bytes);
-                            return iter->_start_address;
-                        }
                     }
+                    else if (iter_size > new_node_size) // 해당 반복자 노드의 크기가 새로운 노드보다 크다면
+                    {
+                        // 신규 노드 준비
+                        Node new_node;
+                        new_node._size = bytes;
+                        new_node._start_address = iter->_start_address;
+                        new_node._is_using = true;
 
-                    ++index;
-                    continue;
+                        // 기존 비활성화 노드 크기 조절
+                        iter->_size -= bytes;
+                        iter->_start_address += bytes;
+
+                        _memory_start_list.insert(iter, new_node);
+
+                        _used_memory += bytes;
+                        printf("할당 완료... index : %d , address : %p, size : %zu \n", index, iter->_start_address, bytes);
+                        return iter->_start_address;
+                    }
                 }
 
-                // 여기까지 오면 빈 자리는 있지만 사이즈가 맞지 않아 할당을 못 하는 상황입니다.
-                    // 마지막 사용 중 노드의 뒤에 충분한 사이즈가 있다면 메모리 할당을 시도합니다.
-                if (bytes <= _size - iter_count_size)
-                {
-                    Node node;
-                    node._start_address = _memory_start_list.back()._start_address + _memory_start_list.back()._size;
-                    node._size = bytes;
-                    node._is_using = true;
-                    _memory_start_list.push_back(node);
-
-                    _used_memory += bytes;
-
-                    printf("할당 완료... index : %zu , address : %p, size : %zu \n", _memory_start_list.size() - 1, node._start_address, bytes);
-                    return _memory_start_list.back()._start_address;
-                }
-                else
-                {
-                    printf("힙 공간은 충분하지만 파편화가 되어 할당할 수 없습니다.\n");
-                    return nullptr;
-                }
+                ++index;
+                continue;
             }
         }
         else
@@ -157,12 +124,10 @@ public:
             return nullptr;
         }
 
+        printf("힙 공간은 충분하지만 파편화가 되어 할당이 불가합니다.\n");
         return nullptr;
     }
 
-    // 메모리 해제 함수
-
-    // 인덱스로 해제
     void Free(int index)
     {
         list<Node>::iterator iter = _memory_start_list.begin();
@@ -214,7 +179,7 @@ public:
                     }
                 }
                
-                if (index < static_cast<int>(_memory_start_list.size()) - 1)
+               
                 {
                     auto next_iter = next(iter, 1);
 
@@ -225,16 +190,11 @@ public:
                             char* next_address = next_iter->_start_address;
                             size_t next_size = next_iter->_size;
 
-                            iter->_size += next_size;       // 다음 노드가 통합 가능 노드라면 주소값은 그대로 두고 사이즈만 더해줍니다
+                            iter->_size += next_size;
 
                             _memory_start_list.erase(next_iter);
                         }
                     }
-                }
-
-                if (iter->_start_address == _memory_start_list.back()._start_address) // 맨 뒤일때
-                {
-                    _memory_start_list.erase(iter);
                 }
              
                 Show();
@@ -247,7 +207,6 @@ public:
 
         printf("메모리가 정상적으로 free 되지 않았습니다. 잘못된 주소입니다.\n");
     }
-
 
     void Show()
     {
@@ -276,72 +235,17 @@ public:
 
         printf("------------------SHOW END-----------------------\n");
     }
-    
-    void SetMemoryMenu()
-    {
-        printf("할당하려는 크기를 입력해주세요.\n");
-        size_t bytes = 0;
-        cin >> bytes;
-
-        if (bytes <= 0)
-        {
-            printf("잘못된 값이 입력되었습니다.\n");
-            return;
-        }
-
-        Malloc(bytes);
-    }
-
-    void FreeMemoryMenu()
-    {
-        Show();
-        printf("해제할 메모리의 인덱스를 입력해주세요! \n");
-
-        size_t index = 0;
-        cin >> index;
-
-        if (index < 0)
-        {
-            printf("잘못된 인덱스입니다. 메인 메뉴로 돌아갑니다.\n");
-            return;
-        }
-
-        Free(static_cast<int>(index));
-        return;
-    }
-
-    void RandomMalloc()
-    {
-        while (_used_memory <= _size)
-        {
-            int random_size = Random(1, 8);
-
-            if (_used_memory + random_size > _size)
-            {
-                break;
-            }
-
-            auto result = Malloc(random_size);
-
-            if (result == nullptr)
-            {
-                break;
-            }
-        }
-    }
 
 private:
     void* _memory_block;
     size_t _size;
     size_t _used_memory;
-
-   // vector<pair<char*,int>> _memory_start_point_list;
-    // 힙메모리에 할당된 메모리들의 주소값을 저장
-    // first : 주소  second : 사용 중인 메모리 바이트
     list<Node> _memory_start_list;
+
+public:
+    size_t Size() { return _size; }
+    size_t GetUsedMemory() { return _used_memory; }
 };
-
-
 
 int main()
 {
@@ -390,13 +294,39 @@ int main()
             break;
         case 'z':
         case 'Z':
+        {
             printf("Z키 : 메모리 할당\n");
-            memory_manager.SetMemoryMenu();
+            printf("할당하려는 크기를 입력해주세요.\n");
+            size_t bytes = 0;
+            cin >> bytes;
+
+            if (bytes <= 0)
+            {
+                printf("잘못된 값이 입력되었습니다.\n");
+                break;
+            }
+
+            memory_manager.Malloc(bytes);
+        }
             break;
         case 'x':
         case 'X':
+        {
             printf("X키 : 메모리 해제\n");
-            memory_manager.FreeMemoryMenu();
+            memory_manager.Show();
+            printf("해제할 메모리의 인덱스를 입력해주세요! \n");
+
+            size_t index = 0;
+            cin >> index;
+
+            if (index < 0)
+            {
+                printf("잘못된 인덱스입니다. 메인 메뉴로 돌아갑니다.\n");
+                break;
+            }
+
+            memory_manager.Free(static_cast<int>(index));
+        }
             break;
         case 'c':
         case 'C':
@@ -405,8 +335,29 @@ int main()
             break;
         case 'v':
         case 'V':
+        {
             printf("V키 : 메모리 랜덤 자동 할당\n");
-            memory_manager.RandomMalloc();
+
+            size_t size = memory_manager.Size();
+            size_t used_memory = memory_manager.GetUsedMemory();
+
+            while (used_memory <= size)
+            {
+                int random_size = Random(1, 8);
+
+                if (used_memory + random_size > size)
+                {
+                    break;
+                }
+
+                auto result = memory_manager.Malloc(random_size);
+
+                if (result == nullptr)
+                {
+                    break;
+                }
+            }
+        }
         default:
             break;
         }
